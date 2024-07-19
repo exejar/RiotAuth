@@ -4,18 +4,19 @@ import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.okhttp.*
 import io.ktor.client.plugins.*
-import io.ktor.client.plugins.api.*
+import io.ktor.client.plugins.compression.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.plugins.cookies.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNamingStrategy
 import okhttp3.logging.HttpLoggingInterceptor
-import java.net.URI
 import java.security.KeyStore
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
@@ -26,7 +27,13 @@ object RiotAuthenticator {
 
     private val client = HttpClient(OkHttp) {
         engine {
-            addInterceptor(HttpLoggingInterceptor().also { it.setLevel(HttpLoggingInterceptor.Level.HEADERS) })
+            addInterceptor { chain ->
+                val req = chain.request().newBuilder()
+                    .removeHeader("Accept-Charset")
+                    .build()
+                chain.proceed(req)
+            }
+            addInterceptor(HttpLoggingInterceptor().also { it.setLevel(HttpLoggingInterceptor.Level.BASIC) })
             config {
                 sslSocketFactory(RiotSSLSocketFactory(), TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply {
                     init(null as KeyStore?)
@@ -36,64 +43,75 @@ object RiotAuthenticator {
                 })
             }
         }
-        install(createClientPlugin("headers-fix") {
-            on(Send) { req ->
-                req.headers.remove("Accept-Charset")
-                this.proceed(req)
-            }
-        })
         install(HttpCookies) {
-            storage = AcceptAllCookiesStorage()
+            storage = object : CookiesStorage {
+                private val storage = mutableMapOf<String, Cookie>()
+                private val mutex = Mutex()
+
+                override suspend fun addCookie(requestUrl: Url, cookie: Cookie) {
+                    mutex.withLock {
+                        if (cookie.name == "asid") {
+                            storage[cookie.name] = cookie
+                        }
+                    }
+                }
+                override suspend fun get(requestUrl: Url): List<Cookie> {
+                    return mutex.withLock {
+                        storage.values.toList()
+                    }
+                }
+                override fun close() = Unit
+            }
         }
         install(ContentNegotiation) {
             json(Json {
+                encodeDefaults = true
                 ignoreUnknownKeys = true
                 namingStrategy = JsonNamingStrategy.Builtins.SnakeCase
             })
         }
+        install(ContentEncoding) {
+            gzip()
+            deflate()
+        }
         install(DefaultRequest) {
             headers {
-                append(HttpHeaders.AcceptEncoding, "deflate, gzip, zstd")
                 append(HttpHeaders.UserAgent, tokenUrlSafe(111))
                 append(HttpHeaders.CacheControl, "no-cache")
-                append(HttpHeaders.Accept, "application/json")
                 append(HttpHeaders.ContentType, "application/json")
             }
         }
     }
 
     suspend fun authorize(username: String, password: String) : RiotAccount {
-        val cookies = client.post(RIOT_AUTH_URL) {
-            setBody(CookieAuthRequest)
-        }.setCookie().joinToString("; ") { "${it.name}=${it.value}" }
+        client.post(RIOT_AUTH_URL) {
+            setBody(CookieAuthRequest())
+        }
 
         val authResponse = client.put(RIOT_AUTH_URL) {
-            header(HttpHeaders.Cookie, cookies)
             setBody(AuthRequest(username = username, password = password))
-        }.body() as AuthResponse
+        }.body<AuthResponseBody>()
 
         when (authResponse.type) {
-            "auth_failure" -> throw Exception("Auth Failure: username or password is incorrect")
-            "error" -> throw Error(authResponse.error)
+            "auth_failure" -> error("Auth Failure: username or password is incorrect")
+            "error" -> error(authResponse.error ?: "Unknown Auth Error")
         }
 
         val tokens = parseTokensFromUrl(authResponse.response!!.parameters.uri)
 
+        val accessToken = tokens["access_token"] ?: error("access_token not found when parsing URI")
         val entitlementsToken = client.post("https://entitlements.auth.riotgames.com/api/token/v1") {
-            header(HttpHeaders.Authorization, "Bearer ${tokens.accessToken}")
+            header(HttpHeaders.Authorization, "Bearer $accessToken")
         }.bodyAsText()
 
-        return RiotAccount(tokens.accessToken, entitlementsToken)
+        return RiotAccount(accessToken, entitlementsToken)
     }
 
-    private fun parseTokensFromUrl(uri: String): AccountTokens {
-        val params = URI(uri).toURL().query.split("&").associate {
+    private fun parseTokensFromUrl(uri: String): Map<String, String> {
+        val fragment = uri.substringAfter("#")
+        return fragment.split("&").associate {
             val (key, value) = it.split("=")
             key to value
         }
-        return AccountTokens(
-            accessToken = params["access_token"] ?: "",
-            idToken = params["id_token"] ?: ""
-        )
     }
 }

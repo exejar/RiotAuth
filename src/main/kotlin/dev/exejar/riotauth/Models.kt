@@ -3,17 +3,17 @@ package dev.exejar.riotauth
 import kotlinx.serialization.*
 
 @Serializable
-data object CookieAuthRequest {
-    val acrValues = ""
-    val claims = ""
-    val clientId = "riot-client"
-    val codeChallenge = ""
-    val codeChallengeMethod = ""
-    val nonce = tokenUrlSafe(16)
-    val redirectUri = "http://localhost/redirect"
-    val responseType = "token id_token"
-    val scope = "openid link ban lol_region account"
-}
+data class CookieAuthRequest(
+    val acrValues: String = "",
+    val claims: String = "",
+    val clientId: String = "riot-client",
+    val codeChallenge: String = "",
+    val codeChallengeMethod: String = "",
+    val nonce: String = tokenUrlSafe(16),
+    val redirectUri: String = "http://localhost/redirect",
+    val responseType: String = "token id_token",
+    val scope: String = "openid link ban lol_region account"
+)
 
 @Serializable
 data class AuthRequest(
@@ -26,35 +26,20 @@ data class AuthRequest(
 )
 
 @Serializable
-data class AuthResponse(
+data class AuthResponseBody(
     val type: String,
     val error: String? = null,
-    val response: AuthResponseParameters? = null
+    val response: Response? = null
 )
 
 @Serializable
-data class AuthResponseParameters(
-    val parameters: Parameters
+data class Response(
+    val parameters: Parameters,
 )
 
 @Serializable
 data class Parameters(
     val uri: String
-)
-
-data class AccountTokens(
-    val accessToken: String,
-    val idToken: String
-)
-
-@Serializable
-data class EntitlementResponse(
-    @SerialName("entitlements_token") val entitlementsToken: String
-)
-
-@Serializable
-data class UserResponse(
-    val sub: String
 )
 
 data class RiotAccount(

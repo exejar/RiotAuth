@@ -17,14 +17,11 @@ dependencies {
     implementation("io.ktor:ktor-client-content-negotiation")
     implementation("io.ktor:ktor-client-auth")
     implementation("io.ktor:ktor-serialization-kotlinx-json")
-
+    implementation("io.ktor:ktor-client-encoding")
     implementation("io.ktor:ktor-client-okhttp")
+
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.5.1")
-}
-
-tasks.test {
-    useJUnitPlatform()
 }

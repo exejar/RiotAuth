@@ -1,5 +1,8 @@
 package dev.exejar.riotauth
 
 suspend fun main() {
-    RiotAuthenticator.authorize("username", "password")
+    val account = RiotAuthenticator.authorize("username", "password")
+
+    println("Access Token: ${account.accessToken}")
+    println("Entitlements Token: ${account.entitlementsToken}")
 }
