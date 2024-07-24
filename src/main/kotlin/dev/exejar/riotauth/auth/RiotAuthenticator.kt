@@ -1,5 +1,7 @@
-package dev.exejar.riotauth
+package dev.exejar.riotauth.auth
 
+import dev.exejar.riotauth.RiotAccount
+import dev.exejar.riotauth.tokenUrlSafe
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.okhttp.*
@@ -8,7 +10,6 @@ import io.ktor.client.plugins.compression.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.plugins.cookies.*
 import io.ktor.client.request.*
-import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.sync.Mutex
@@ -25,7 +26,7 @@ import javax.net.ssl.X509TrustManager
 object RiotAuthenticator {
     private const val RIOT_AUTH_URL = "https://auth.riotgames.com/api/v1/authorization"
 
-    private val client = HttpClient(OkHttp) {
+    private val authClient = HttpClient(OkHttp) {
         engine {
             addInterceptor { chain ->
                 val req = chain.request().newBuilder()
@@ -84,13 +85,13 @@ object RiotAuthenticator {
     }
 
     suspend fun authorize(username: String, password: String) : RiotAccount {
-        client.post(RIOT_AUTH_URL) {
-            setBody(CookieAuthRequest())
+        authClient.post(RIOT_AUTH_URL) {
+            setBody(AuthCookiesPost())
         }
 
-        val authResponse = client.put(RIOT_AUTH_URL) {
-            setBody(AuthRequest(username = username, password = password))
-        }.body<AuthResponseBody>()
+        val authResponse = authClient.put(RIOT_AUTH_URL) {
+            setBody(AuthRequestPut(username = username, password = password))
+        }.body<AuthRequestResponse.Body>()
 
         when (authResponse.type) {
             "auth_failure" -> error("Auth Failure: username or password is incorrect")
@@ -100,11 +101,15 @@ object RiotAuthenticator {
         val tokens = parseTokensFromUrl(authResponse.response!!.parameters.uri)
 
         val accessToken = tokens["access_token"] ?: error("access_token not found when parsing URI")
-        val entitlementsToken = client.post("https://entitlements.auth.riotgames.com/api/token/v1") {
+        val entitlementsToken = authClient.post("https://entitlements.auth.riotgames.com/api/token/v1") {
             header(HttpHeaders.Authorization, "Bearer $accessToken")
-        }.bodyAsText()
+        }.body<EntitlementsTokenResponse>().entitlementsToken
 
-        return RiotAccount(accessToken, entitlementsToken)
+        val playerInfo = authClient.get("https://auth.riotgames.com/userinfo") {
+            bearerAuth(accessToken)
+        }.body<PlayerInfoResponse.Body>()
+
+        return RiotAccount(accessToken, entitlementsToken, authClient.cookies(RIOT_AUTH_URL), playerInfo)
     }
 
     private fun parseTokensFromUrl(uri: String): Map<String, String> {
@@ -115,3 +120,4 @@ object RiotAuthenticator {
         }
     }
 }
+

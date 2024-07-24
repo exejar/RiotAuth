@@ -1,4 +1,4 @@
-package dev.exejar.riotauth
+package dev.exejar.riotauth.auth
 
 import java.net.InetAddress
 import java.net.Socket

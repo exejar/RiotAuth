@@ -1,48 +1,31 @@
 package dev.exejar.riotauth
 
-import kotlinx.serialization.*
+import dev.exejar.riotauth.auth.PlayerInfoResponse
+import io.ktor.http.*
+import kotlinx.serialization.Serializable
 
-@Serializable
-data class CookieAuthRequest(
-    val acrValues: String = "",
-    val claims: String = "",
-    val clientId: String = "riot-client",
-    val codeChallenge: String = "",
-    val codeChallengeMethod: String = "",
-    val nonce: String = tokenUrlSafe(16),
-    val redirectUri: String = "http://localhost/redirect",
-    val responseType: String = "token id_token",
-    val scope: String = "openid link ban lol_region account"
-)
+object RiotClientVersionResponse {
+    @Serializable
+    data class Body(
+        val status: Int,
+        val data: Data
+    )
+    @Serializable
+    data class Data(
+        val manifestId: String,
+        val branch: String,
+        val version: String,
+        val buildVersion: String,
+        val engineVersion: String,
+        val riotClientVersion: String,
+        val riotClientBuild: String,
+        val buildDate: String
+    )
+}
 
-@Serializable
-data class AuthRequest(
-    val language: String = "en_US",
-    val password: String,
-    val region: String? = null,
-    val remember: Boolean = false,
-    val type: String = "auth",
-    val username: String
-)
-
-@Serializable
-data class AuthResponseBody(
-    val type: String,
-    val error: String? = null,
-    val response: Response? = null
-)
-
-@Serializable
-data class Response(
-    val parameters: Parameters,
-)
-
-@Serializable
-data class Parameters(
-    val uri: String
-)
-
-data class RiotAccount(
+open class RiotAccount(
     val accessToken: String,
-    val entitlementsToken: String
+    val entitlementsToken: String,
+    val authCookie: List<Cookie>,
+    val playerInfo: PlayerInfoResponse.Body
 )
